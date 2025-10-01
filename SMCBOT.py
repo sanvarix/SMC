@@ -633,74 +633,81 @@ async def userinfo(interaction: discord.Interaction, member: discord.Member = No
 
 
 
+import discord
+from discord.ext import commands
+from discord import app_commands
 from discord.ui import View, Button
 
-class ReactionRoleView(View):
-    def __init__(self, role_dict):
-        super().__init__(timeout=None)
-        self.role_dict = role_dict
-        for emoji, role_id in role_dict.items():
-            self.add_item(RoleButton(emoji, role_id))
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-class RoleButton(Button):
-    def __init__(self, emoji, role_id):
-        super().__init__(style=discord.ButtonStyle.secondary, label=str(emoji))
-        self.role_id = role_id
+# Button class for each role
+class ReactionRoleButton(Button):
+    def __init__(self, role: discord.Role, emoji: str):
+        super().__init__(style=discord.ButtonStyle.secondary, label=role.name, emoji=emoji)
+        self.role = role
 
     async def callback(self, interaction: discord.Interaction):
-        role = interaction.guild.get_role(self.role_id)
-        if role in interaction.user.roles:
-            await interaction.user.remove_roles(role)
-            await interaction.response.send_message(f"✅ Removed {role.mention}", ephemeral=True)
+        user = interaction.user
+        if self.role in user.roles:
+            await user.remove_roles(self.role)
+            await interaction.response.send_message(f"Removed {self.role.mention}", ephemeral=True)
         else:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"✅ Added {role.mention}", ephemeral=True)
+            await user.add_roles(self.role)
+            await interaction.response.send_message(f"Added {self.role.mention}", ephemeral=True)
 
-# Slash command
-@bot.tree.command(name="rr", description="Create a reaction role message")
-async def rr(
-    interaction: discord.Interaction,
-    channel: discord.TextChannel,
-    title: str,
-    description: str,
-    roles: str  # Comma-separated role IDs or mentions
-):
-    # Only allow mods
+# View class to hold all role buttons
+class ReactionRoleView(View):
+    def __init__(self, roles: list, emojis: list = None):
+        super().__init__(timeout=None)
+        if emojis is None:
+            emojis = ["🔹", "🔸", "🔺", "🔻", "⭐", "🌟", "💎", "🔥", "🎯", "🎵"]
+        for i, role in enumerate(roles):
+            emoji = emojis[i % len(emojis)]
+            self.add_item(ReactionRoleButton(role, emoji))
+
+# Slash command to create reaction role embed
+@bot.tree.command(name="rr", description="Create a reaction role embed")
+@app_commands.describe(
+    channel="Channel to send the embed",
+    roles="Comma-separated role mentions or IDs (example: @Role1,@Role2)"
+)
+async def rr(interaction: discord.Interaction, channel: discord.TextChannel, roles: str):
     if not interaction.user.guild_permissions.manage_roles:
-        await interaction.response.send_message("❌ You need Manage Roles permission.", ephemeral=True)
+        await interaction.response.send_message("You need Manage Roles permission.", ephemeral=True)
         return
 
-    role_list = [r.strip() for r in roles.split(",")]
-    role_dict = {}
-
-    for r in role_list:
+    # Parse roles from input
+    role_list = []
+    for r in roles.split(","):
+        r = r.strip()
         role = None
         if r.isdigit():
             role = interaction.guild.get_role(int(r))
         elif r.startswith("<@&") and r.endswith(">"):
-            role_id = int(r[3:-1])
-            role = interaction.guild.get_role(role_id)
+            role = interaction.guild.get_role(int(r[3:-1]))
         if role:
-            emojis = ["🔹", "🔸", "🔺", "🔻", "⭐", "🌟", "💎", "🔥", "🎯", "🎵"]  # add more if needed
-        role_dict = {}
+            role_list.append(role)
 
-    for i, r in enumerate(role_list):
-    		role = None
-    if r.isdigit():
-    		role = interaction.guild.get_role(int(r))
-    elif r.startswith("<@&") and r.endswith(">"):
-        	role_id = int(r[3:-1])
-        	role = interaction.guild.get_role(role_id)
-    if role:
-        	emoji = emojis[i % len(emojis)]  # assign a unique emoji
-        	role_dict[emoji] = role.id
+    if not role_list:
+        await interaction.response.send_message("No valid roles found.", ephemeral=True)
+        return
 
-    embed = discord.Embed(title=title, description=description, color=discord.Color.blurple())
-    embed.add_field(name="Roles", value="\n".join([f"{emoji} - {interaction.guild.get_role(rid).mention}" for emoji, rid in role_dict.items()]))
+    # Create embed
+    embed = discord.Embed(
+        title="Reaction Roles",
+        description="Click a button to get a role!",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(
+        name="Roles",
+        value="\n".join([f"{role.mention}" for role in role_list])
+    )
 
-    view = ReactionRoleView(role_dict)
+    # Create view and send embed
+    view = ReactionRoleView(role_list)
     await channel.send(embed=embed, view=view)
-    await interaction.response.send_message(f"✅ Reaction role message sent to {channel.mention}", ephemeral=True)
+    await interaction.response.send_message(f"✅ Reaction role message sent to {channel.mention}", ephemeral=True) Reaction role message sent to {channel.mention}", ephemeral=True)
 
 
 # ---------------- ERROR HANDLING ----------------
